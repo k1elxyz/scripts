@@ -365,44 +365,62 @@ local function CompleteRaid()
 end
 
 local function Hop()
-    Notify("Hopping...")
+    Notify("Server hopping...")
     task.wait(Config.HopDelay)
     local placeId = game.PlaceId
-    local currentJobId = game.JobId
+    local tried = {}
     local cursor = ""
+    local currentJobId = game.JobId
+    local isTeleportingHop = false  -- separate flag para sa hop
 
     local function TryHop()
-        local url
-        if cursor ~= "" then
-            url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&cursor=" .. cursor
-        else
-            url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
-        end
-        local success, data = pcall(function()
+        local url = "https://games.roblox.com/v1/games/" .. placeId
+            .. "/servers/Public?sortOrder=Asc&limit=100"
+            .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
+
+        local ok, data = pcall(function()
             return HttpSvc:JSONDecode(game:HttpGet(url))
         end)
-        if not success or not data or not data.data then return false end
+        if not ok or not data then return end
+
         if data.nextPageCursor and data.nextPageCursor ~= "null" then
             cursor = data.nextPageCursor
         end
+
         for _, server in pairs(data.data) do
-            local serverId = tostring(server.id)
-            if serverId ~= currentJobId and tonumber(server.maxPlayers) > tonumber(server.playing) then
-                pcall(function()
-                    TpSvc:TeleportToPlaceInstance(placeId, serverId, Plr)
-                end)
-                task.wait(5)
-                return true
+            local sid = tostring(server.id)
+            if sid ~= currentJobId
+            and tonumber(server.maxPlayers) > tonumber(server.playing) then
+                local found = false
+                for _, t in pairs(tried) do
+                    if t == sid then found = true break end
+                end
+                if not found then
+                    table.insert(tried, sid)
+
+                    if isTeleportingHop then return end  -- skip kung nag-te-teleport na
+                    isTeleportingHop = true
+
+                    Notify("Hopping to: " .. sid)
+                    local success = pcall(function()
+                        TpSvc:TeleportToPlaceInstance(placeId, sid, Plr)
+                    end)
+
+                    if success then
+                        task.wait(10)  -- hintayin ang teleport bago mag-retry
+                    else
+                        isTeleportingHop = false  -- failed, pwede ulit mag-try
+                        task.wait(3)
+                    end
+                end
             end
         end
-        return false
     end
 
-    for i = 1, 5 do
-        if TryHop() then return end
-        task.wait(0.5)
+    while true do
+        pcall(TryHop)
+        task.wait(3)  -- mas matagal na gap bawat attempt
     end
-    pcall(function() TpSvc:Teleport(placeId, Plr) end)
 end
 
 Notify("Marines joined! Starting...")
