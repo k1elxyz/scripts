@@ -1,36 +1,24 @@
--- ================================================
---   AUTO FRUIT → CHIP → FLAME RAID → HOP
---   Functions lifted directly from REDZ_HUB source
--- ================================================
-
-local Players    = game:GetService("Players")
+local Players = game:GetService("Players")
 local RepStorage = game:GetService("ReplicatedStorage")
-local TweenSvc   = game:GetService("TweenService")
-local TpSvc      = game:GetService("TeleportService")
-local Workspace  = game:GetService("Workspace")
+local TweenSvc = game:GetService("TweenService")
+local TpSvc = game:GetService("TeleportService")
+local Workspace = game:GetService("Workspace")
 
-local Plr  = Players.LocalPlayer
+local Plr = Players.LocalPlayer
 local Char = Plr.Character or Plr.CharacterAdded:Wait()
 local Root = Char:WaitForChild("HumanoidRootPart")
 
 local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
 local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 
--- ================================================
--- CONFIG
--- ================================================
 local Config = {
-    ChipType    = "Flame",
+    ChipType = "Flame",
     FruitRadius = 2000,
-    TweenSpeed  = 0.3,
-    HopDelay    = 5,
+    TweenSpeed = 0.3,
+    HopDelay = 5,
     RaidTimeout = 300,
     LoopEnabled = true,
 }
-
--- ================================================
--- UTILITY
--- ================================================
 
 local function Notify(msg)
     print("[FruitRaid] " .. msg)
@@ -63,41 +51,33 @@ local function getCommF()
     return RepStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 end
 
--- ================================================
--- STEP 0: JOIN MARINES — BLOCKING, RUNS FIRST
--- Walang magsisimula hanggang Marines confirmed
--- ================================================
+repeat task.wait(1) until Plr.Character and Plr.Character:FindFirstChild("HumanoidRootPart")
+task.wait(3)
+refreshChar()
 
 local function JoinMarines()
     Notify("Selecting Marines team...")
-
     local attempts = 0
     repeat
         attempts = attempts + 1
         pcall(function()
-            local args = {"TeamSelect/Team/Marines"}
-            RepStorage:WaitForChild("Modules"):WaitForChild("Net")
-                :WaitForChild("RE/OnEventServiceActivity"):FireServer(unpack(args))
+            getCommF():InvokeServer("SetTeam", "Marines")
         end)
         task.wait(2)
         Notify("Waiting for Marines... attempt " .. attempts)
-    until (Plr.Team and Plr.Team.Name == "Marines") or attempts >= 10
+    until (Plr.Team and Plr.Team.Name == "Marines") or attempts >= 15
 
     if Plr.Team and Plr.Team.Name == "Marines" then
         Notify("Successfully joined Marines!")
     else
-        Notify("Failed to join Marines after " .. attempts .. " attempts. Proceeding anyway.")
+        Notify("Failed to join Marines. Proceeding anyway.")
     end
 end
 
--- Blocking call — lahat ng ibang code hindi magsisimula hanggang tapos ito
 JoinMarines()
-Notify("Marines selected. Starting script...")
+Notify("Marines done. Starting loop...")
 task.wait(1)
-
--- ================================================
--- STEP 1: DETECT DROPPED FRUITS
--- ================================================
+refreshChar()
 
 local function GetDroppedFruits()
     local list = {}
@@ -112,26 +92,18 @@ local function GetDroppedFruits()
     return list
 end
 
--- ================================================
--- STEP 2: TWEEN + COLLECT FRUIT
--- ================================================
-
 local function CollectFruit(fruit)
-    if not fruit or not fruit:FindFirstChild("Handle") then return end
+    if not fruit or not fruit:FindFirstChild("Handle") then return false end
     Notify("Collecting: " .. fruit.Name)
     TweenTo(fruit.Handle.CFrame)
     task.wait(0.3)
     pcall(function() Root.CFrame = fruit.Handle.CFrame end)
     task.wait(0.5)
+    return true
 end
-
--- ================================================
--- STEP 3: BUY CHIP
--- ================================================
 
 local function BuyChip()
     Notify("Buying " .. Config.ChipType .. " chip...")
-
     if World2 then
         topos(CFrame.new(-6438.73, 250.64, -4501.5))
     elseif World3 then
@@ -140,7 +112,6 @@ local function BuyChip()
         end)
         topos(CFrame.new(-5017.4, 314.84, -2823.01))
     end
-
     task.wait(0.5)
     pcall(function()
         getCommF():InvokeServer("RaidsNpc", "Select", Config.ChipType)
@@ -149,12 +120,7 @@ local function BuyChip()
     Notify("Chip purchased!")
 end
 
--- ================================================
--- STEP 4: START RAID
--- ================================================
-
 local function StartRaid()
-    -- Hintayin ang Special Microchip
     local waited = 0
     repeat
         task.wait(1)
@@ -169,10 +135,9 @@ local function StartRaid()
         return false
     end
 
-    -- Hintayin kung may active raid pa
     local gui = Plr.PlayerGui:FindFirstChild("Main")
     if gui and gui:FindFirstChild("Timer") and gui.Timer.Visible then
-        Notify("Active raid detected, waiting for it to finish...")
+        Notify("Active raid detected, waiting...")
         repeat task.wait(1) until not gui.Timer.Visible
     end
 
@@ -197,10 +162,6 @@ local function StartRaid()
     Notify("Raid started!")
     return true
 end
-
--- ================================================
--- STEP 5: COMPLETE RAID (AUTO FARM MOBS PER ISLAND)
--- ================================================
 
 local function GetIsland(num)
     local closest, dist = nil, math.huge
@@ -254,40 +215,30 @@ end
 local function CompleteRaid()
     _G.RaidRunning = true
     Notify("Completing raid...")
-
     local elapsed = 0
     while _G.RaidRunning and elapsed < Config.RaidTimeout do
         task.wait(0.1)
         elapsed = elapsed + 0.1
-
         if not IsRaidActive() then
             Notify("Raid completed!")
             _G.RaidRunning = false
             break
         end
-
         FarmRaidEnemies()
-
         local isl = GetNextIsland()
         if isl then
             topos(isl.CFrame * CFrame.new(0, 60, 0))
         end
     end
-
     if elapsed >= Config.RaidTimeout then
-        Notify("Raid timed out! Proceeding anyway.")
+        Notify("Raid timed out!")
     end
-
     _G.RaidRunning = false
     task.wait(1)
 end
 
--- ================================================
--- STEP 6: SERVER HOP
--- ================================================
-
 local function Hop()
-    Notify("Server hopping in " .. Config.HopDelay .. "s...")
+    Notify("Server hopping...")
     task.wait(Config.HopDelay)
     pcall(function()
         if _G.Hop then
@@ -298,14 +249,8 @@ local function Hop()
     end)
 end
 
--- ================================================
--- MAIN LOOP
--- Marines na confirmed bago makarating dito
--- ================================================
-
 local function RunLoop()
-    Notify("Auto Fruit Raid Loop started!")
-
+    Notify("Loop started!")
     while Config.LoopEnabled do
         task.wait(2)
         refreshChar()
@@ -313,65 +258,39 @@ local function RunLoop()
         local fruits = GetDroppedFruits()
         Notify("Fruits detected: " .. #fruits)
 
-        if #fruits >= 1 then
-            -- Tween + collect lahat ng fruits
-            for _, fruit in ipairs(fruits) do
+        if #fruits == 0 then
+            Notify("No fruits. Hopping...")
+            Hop()
+        else
+            while true do
+                refreshChar()
+                local currentFruits = GetDroppedFruits()
+                if #currentFruits == 0 then
+                    Notify("No more fruits. Hopping...")
+                    Hop()
+                    break
+                end
+
+                local fruit = currentFruits[1]
+                Notify("Picking up: " .. fruit.Name)
+
                 if Char.Humanoid.Health <= 0 then
                     refreshChar()
                     task.wait(3)
                 end
+
                 CollectFruit(fruit)
-            end
-
-            -- Kunin fruits sa inventory
-            local fruitItems = {}
-            for _, item in ipairs(Plr.Backpack:GetChildren()) do
-                if string.find(item.Name, "Fruit") then
-                    table.insert(fruitItems, item)
-                end
-            end
-            for _, item in ipairs(Char:GetChildren()) do
-                if string.find(item.Name, "Fruit") then
-                    table.insert(fruitItems, item)
-                end
-            end
-
-            Notify("Fruits in inventory: " .. #fruitItems)
-
-            -- Per fruit: buy chip → start raid → complete
-            for _, fruitItem in ipairs(fruitItems) do
-                Notify("Processing fruit: " .. fruitItem.Name)
+                task.wait(1)
                 BuyChip()
                 local started = StartRaid()
                 if started then
                     CompleteRaid()
                 end
-                task.wait(1)
+                refreshChar()
+                task.wait(2)
             end
-
-            -- Check bagong fruits after raid
-            local newFruits = GetDroppedFruits()
-            if #newFruits >= 1 then
-                Notify("New fruit detected! Restarting loop...")
-            else
-                Notify("No fruits remaining. Hopping in " .. Config.HopDelay .. "s...")
-                task.wait(Config.HopDelay)
-                Hop()
-            end
-
-        else
-            -- Walang fruit, hop agad
-            Notify("No fruits detected. Hopping in " .. Config.HopDelay .. "s...")
-            task.wait(Config.HopDelay)
-            Hop()
         end
     end
 end
 
--- ================================================
--- EXECUTION ORDER:
--- 1. JoinMarines()  ← blocking, tapos muna bago lahat
--- 2. task.wait(1)   ← buffer
--- 3. RunLoop()      ← loop starts
--- ================================================
 task.spawn(RunLoop)
