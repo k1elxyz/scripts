@@ -22,7 +22,7 @@ local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 
 local Config = {
     ChipType = "Flame",
-    FruitRadius = 2000,
+    FruitRadius = 6000,
     TweenSpeed = 0.3,
     HopDelay = 5,
     RaidTimeout = 300,
