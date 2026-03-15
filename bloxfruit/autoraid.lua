@@ -10,6 +10,7 @@ local Players = game:GetService("Players")
 local RepStorage = game:GetService("ReplicatedStorage")
 local TweenSvc = game:GetService("TweenService")
 local TpSvc = game:GetService("TeleportService")
+local HttpSvc = game:GetService("HttpService")
 local Workspace = game:GetService("Workspace")
 
 local Plr = Players.LocalPlayer
@@ -21,7 +22,7 @@ local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 
 local Config = {
     ChipType = "Flame",
-    FruitRadius = 5000,
+    FruitRadius = 2000,
     TweenSpeed = 0.3,
     HopDelay = 5,
     RaidTimeout = 300,
@@ -59,6 +60,66 @@ end
 
 local function getCommF()
     return RepStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+end
+
+local function Hop()
+    Notify("Server hopping...")
+    task.wait(Config.HopDelay)
+    local placeId = game.PlaceId
+    local tried = {}
+    local cursor = ""
+    local currentJobId = game.JobId
+    local hour = os.date("!*t").hour
+
+    local function TryHop()
+        local url
+        if cursor ~= "" then
+            url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&cursor=" .. cursor
+        else
+            url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
+        end
+
+        local success, data = pcall(function()
+            return HttpSvc:JSONDecode(game:HttpGet(url))
+        end)
+
+        if not success or not data then return end
+
+        if data.nextPageCursor and data.nextPageCursor ~= "null" then
+            cursor = data.nextPageCursor
+        end
+
+        for _, server in pairs(data.data) do
+            local serverId = tostring(server.id)
+            if serverId ~= currentJobId and tonumber(server.maxPlayers) > tonumber(server.playing) then
+                local alreadyTried = false
+                for _, t in pairs(tried) do
+                    if t == serverId then
+                        alreadyTried = true
+                        break
+                    end
+                end
+                if not alreadyTried then
+                    table.insert(tried, serverId)
+                    Notify("Hopping to server: " .. serverId)
+                    pcall(function()
+                        TpSvc:TeleportToPlaceInstance(placeId, serverId, Plr)
+                    end)
+                    task.wait(5)
+                end
+            end
+        end
+    end
+
+    while true do
+        pcall(function()
+            TryHop()
+            if cursor ~= "" then
+                TryHop()
+            end
+        end)
+        task.wait(1)
+    end
 end
 
 local function GetDroppedFruits()
@@ -216,18 +277,6 @@ local function CompleteRaid()
     end
     _G.RaidRunning = false
     task.wait(1)
-end
-
-local function Hop()
-    Notify("Server hopping...")
-    task.wait(Config.HopDelay)
-    pcall(function()
-        if _G.Hop then
-            _G.Hop()
-        else
-            TpSvc:Teleport(game.PlaceId, Plr)
-        end
-    end)
 end
 
 local function RunLoop()
