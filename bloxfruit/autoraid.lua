@@ -1,3 +1,11 @@
+local args = {
+    "SetTeam",
+    "Marines"
+}
+game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+
+repeat task.wait(1) until game:GetService("Players").LocalPlayer.Team and game:GetService("Players").LocalPlayer.Team.Name == "Marines"
+
 local Players = game:GetService("Players")
 local RepStorage = game:GetService("ReplicatedStorage")
 local TweenSvc = game:GetService("TweenService")
@@ -13,7 +21,7 @@ local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 
 local Config = {
     ChipType = "Flame",
-    FruitRadius = 2000,
+    FruitRadius = 5000,
     TweenSpeed = 0.3,
     HopDelay = 5,
     RaidTimeout = 300,
@@ -28,6 +36,8 @@ local function Notify(msg)
         })
     end)
 end
+
+Notify("Marines joined! Starting script...")
 
 local function TweenTo(cf)
     pcall(function()
@@ -51,34 +61,6 @@ local function getCommF()
     return RepStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 end
 
-repeat task.wait(1) until Plr.Character and Plr.Character:FindFirstChild("HumanoidRootPart")
-task.wait(3)
-refreshChar()
-
-local function JoinMarines()
-    Notify("Selecting Marines team...")
-    local attempts = 0
-    repeat
-        attempts = attempts + 1
-        pcall(function()
-            getCommF():InvokeServer("SetTeam", "Marines")
-        end)
-        task.wait(2)
-        Notify("Waiting for Marines... attempt " .. attempts)
-    until (Plr.Team and Plr.Team.Name == "Marines") or attempts >= 15
-
-    if Plr.Team and Plr.Team.Name == "Marines" then
-        Notify("Successfully joined Marines!")
-    else
-        Notify("Failed to join Marines. Proceeding anyway.")
-    end
-end
-
-JoinMarines()
-Notify("Marines done. Starting loop...")
-task.wait(1)
-refreshChar()
-
 local function GetDroppedFruits()
     local list = {}
     for _, obj in pairs(Workspace:GetChildren()) do
@@ -93,13 +75,12 @@ local function GetDroppedFruits()
 end
 
 local function CollectFruit(fruit)
-    if not fruit or not fruit:FindFirstChild("Handle") then return false end
+    if not fruit or not fruit:FindFirstChild("Handle") then return end
     Notify("Collecting: " .. fruit.Name)
     TweenTo(fruit.Handle.CFrame)
     task.wait(0.3)
     pcall(function() Root.CFrame = fruit.Handle.CFrame end)
     task.wait(0.5)
-    return true
 end
 
 local function BuyChip()
@@ -254,10 +235,8 @@ local function RunLoop()
     while Config.LoopEnabled do
         task.wait(2)
         refreshChar()
-
         local fruits = GetDroppedFruits()
         Notify("Fruits detected: " .. #fruits)
-
         if #fruits == 0 then
             Notify("No fruits. Hopping...")
             Hop()
@@ -270,15 +249,12 @@ local function RunLoop()
                     Hop()
                     break
                 end
-
                 local fruit = currentFruits[1]
                 Notify("Picking up: " .. fruit.Name)
-
                 if Char.Humanoid.Health <= 0 then
                     refreshChar()
                     task.wait(3)
                 end
-
                 CollectFruit(fruit)
                 task.wait(1)
                 BuyChip()
