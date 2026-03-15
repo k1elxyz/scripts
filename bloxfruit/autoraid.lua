@@ -63,17 +63,15 @@ end
 -- ================================================
 -- AUTO JOIN MARINES (fixed)
 -- ================================================
-
 local function JoinMarines()
     Notify("Selecting Marines team...")
 
-    -- Force invoke regardless of current team
-    -- Loop hanggang confirmed na Marines ka
     local attempts = 0
     repeat
         attempts = attempts + 1
         pcall(function()
-            CommF_:InvokeServer("SetTeam", "Marines")
+            local args = {"SetTeam", "Marines"}
+            RepStorage:WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
         end)
         task.wait(2)
         Notify("Waiting for Marines team... attempt " .. attempts)
@@ -82,7 +80,7 @@ local function JoinMarines()
     if Plr.Team and Plr.Team.Name == "Marines" then
         Notify("Successfully joined Marines!")
     else
-        Notify("Failed to join Marines after " .. attempts .. " attempts. Proceeding anyway.")
+        Notify("Failed to join Marines. Proceeding anyway.")
     end
 end
 
