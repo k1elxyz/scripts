@@ -24,7 +24,7 @@ local Config = {
     ChipType = "Flame",
     FruitRadius = 6000,
     TweenSpeed = 0.3,
-    HopDelay = 5,
+    HopDelay = 10,
     RaidTimeout = 300,
     LoopEnabled = true,
 }
