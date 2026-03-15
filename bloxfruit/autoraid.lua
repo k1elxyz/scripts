@@ -75,8 +75,9 @@ local function JoinMarines()
     repeat
         attempts = attempts + 1
         pcall(function()
-            local args = {"SetTeam", "Marines"}
-            getCommF():InvokeServer(unpack(args))
+            local args = {"TeamSelect/Team/Marines"}
+            RepStorage:WaitForChild("Modules"):WaitForChild("Net")
+                :WaitForChild("RE/OnEventServiceActivity"):FireServer(unpack(args))
         end)
         task.wait(2)
         Notify("Waiting for Marines... attempt " .. attempts)
