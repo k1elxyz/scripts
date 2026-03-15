@@ -61,18 +61,28 @@ local function refreshChar()
 end
 
 -- ================================================
--- AUTO JOIN MARINES (exact from source JoinTeam)
+-- AUTO JOIN MARINES (fixed)
 -- ================================================
 
 local function JoinMarines()
-    if not Plr.Team
-    or (Plr.Team.Name ~= "Marines" and Plr.Team.Name ~= "Pirates") then
+    Notify("Selecting Marines team...")
+
+    -- Force invoke regardless of current team
+    -- Loop hanggang confirmed na Marines ka
+    local attempts = 0
+    repeat
+        attempts = attempts + 1
         pcall(function()
             CommF_:InvokeServer("SetTeam", "Marines")
         end)
-        Notify("Joined Marines team.")
+        task.wait(2)
+        Notify("Waiting for Marines team... attempt " .. attempts)
+    until (Plr.Team and Plr.Team.Name == "Marines") or attempts >= 10
+
+    if Plr.Team and Plr.Team.Name == "Marines" then
+        Notify("Successfully joined Marines!")
     else
-        Notify("Already in a team: " .. Plr.Team.Name)
+        Notify("Failed to join Marines after " .. attempts .. " attempts. Proceeding anyway.")
     end
 end
 
