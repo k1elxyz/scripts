@@ -9,10 +9,9 @@ local TweenSvc   = game:GetService("TweenService")
 local TpSvc      = game:GetService("TeleportService")
 local Workspace  = game:GetService("Workspace")
 
-local Plr    = Players.LocalPlayer
-local Char   = Plr.Character or Plr.CharacterAdded:Wait()
-local Root   = Char:WaitForChild("HumanoidRootPart")
-local CommF_ = RepStorage.Remotes.CommF_
+local Plr  = Players.LocalPlayer
+local Char = Plr.Character or Plr.CharacterAdded:Wait()
+local Root = Char:WaitForChild("HumanoidRootPart")
 
 local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
 local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
@@ -60,9 +59,15 @@ local function refreshChar()
     Root = Char:WaitForChild("HumanoidRootPart")
 end
 
+local function getCommF()
+    return RepStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+end
+
 -- ================================================
--- AUTO JOIN MARINES (fixed)
+-- STEP 0: JOIN MARINES — BLOCKING, RUNS FIRST
+-- Walang magsisimula hanggang Marines confirmed
 -- ================================================
+
 local function JoinMarines()
     Notify("Selecting Marines team...")
 
@@ -71,18 +76,23 @@ local function JoinMarines()
         attempts = attempts + 1
         pcall(function()
             local args = {"SetTeam", "Marines"}
-            RepStorage:WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+            getCommF():InvokeServer(unpack(args))
         end)
         task.wait(2)
-        Notify("Waiting for Marines team... attempt " .. attempts)
+        Notify("Waiting for Marines... attempt " .. attempts)
     until (Plr.Team and Plr.Team.Name == "Marines") or attempts >= 10
 
     if Plr.Team and Plr.Team.Name == "Marines" then
         Notify("Successfully joined Marines!")
     else
-        Notify("Failed to join Marines. Proceeding anyway.")
+        Notify("Failed to join Marines after " .. attempts .. " attempts. Proceeding anyway.")
     end
 end
+
+-- Blocking call — lahat ng ibang code hindi magsisimula hanggang tapos ito
+JoinMarines()
+Notify("Marines selected. Starting script...")
+task.wait(1)
 
 -- ================================================
 -- STEP 1: DETECT DROPPED FRUITS
@@ -110,9 +120,7 @@ local function CollectFruit(fruit)
     Notify("Collecting: " .. fruit.Name)
     TweenTo(fruit.Handle.CFrame)
     task.wait(0.3)
-    pcall(function()
-        Root.CFrame = fruit.Handle.CFrame
-    end)
+    pcall(function() Root.CFrame = fruit.Handle.CFrame end)
     task.wait(0.5)
 end
 
@@ -127,14 +135,14 @@ local function BuyChip()
         topos(CFrame.new(-6438.73, 250.64, -4501.5))
     elseif World3 then
         pcall(function()
-            CommF_:InvokeServer("requestEntrance", Vector3.new(-5075.5, 314.51, -3150.02))
+            getCommF():InvokeServer("requestEntrance", Vector3.new(-5075.5, 314.51, -3150.02))
         end)
         topos(CFrame.new(-5017.4, 314.84, -2823.01))
     end
 
     task.wait(0.5)
     pcall(function()
-        CommF_:InvokeServer("RaidsNpc", "Select", Config.ChipType)
+        getCommF():InvokeServer("RaidsNpc", "Select", Config.ChipType)
     end)
     task.wait(1)
     Notify("Chip purchased!")
@@ -145,6 +153,7 @@ end
 -- ================================================
 
 local function StartRaid()
+    -- Hintayin ang Special Microchip
     local waited = 0
     repeat
         task.wait(1)
@@ -159,6 +168,7 @@ local function StartRaid()
         return false
     end
 
+    -- Hintayin kung may active raid pa
     local gui = Plr.PlayerGui:FindFirstChild("Main")
     if gui and gui:FindFirstChild("Timer") and gui.Timer.Visible then
         Notify("Active raid detected, waiting for it to finish...")
@@ -167,16 +177,16 @@ local function StartRaid()
 
     if World2 then
         topos(CFrame.new(-6438.73, 250.64, -4501.5))
-        pcall(function() CommF_:InvokeServer("SetSpawnPoint") end)
+        pcall(function() getCommF():InvokeServer("SetSpawnPoint") end)
         pcall(function()
             fireclickdetector(Workspace.Map.CircleIsland.RaidSummon2.Button.Main.ClickDetector)
         end)
     elseif World3 then
         pcall(function()
-            CommF_:InvokeServer("requestEntrance", Vector3.new(-5075.5, 314.51, -3150.02))
+            getCommF():InvokeServer("requestEntrance", Vector3.new(-5075.5, 314.51, -3150.02))
         end)
         topos(CFrame.new(-5017.4, 314.84, -2823.01))
-        pcall(function() CommF_:InvokeServer("SetSpawnPoint") end)
+        pcall(function() getCommF():InvokeServer("SetSpawnPoint") end)
         pcall(function()
             fireclickdetector(Workspace.Map["Boat Castle"].RaidSummon2.Button.Main.ClickDetector)
         end)
@@ -289,13 +299,10 @@ end
 
 -- ================================================
 -- MAIN LOOP
+-- Marines na confirmed bago makarating dito
 -- ================================================
 
 local function RunLoop()
-    -- Auto join Marines on start (exact from source JoinTeam)
-    JoinMarines()
-    task.wait(1)
-
     Notify("Auto Fruit Raid Loop started!")
 
     while Config.LoopEnabled do
@@ -306,7 +313,7 @@ local function RunLoop()
         Notify("Fruits detected: " .. #fruits)
 
         if #fruits >= 1 then
-            -- Tween + collect all fruits
+            -- Tween + collect lahat ng fruits
             for _, fruit in ipairs(fruits) do
                 if Char.Humanoid.Health <= 0 then
                     refreshChar()
@@ -315,7 +322,7 @@ local function RunLoop()
                 CollectFruit(fruit)
             end
 
-            -- Get fruits from inventory
+            -- Kunin fruits sa inventory
             local fruitItems = {}
             for _, item in ipairs(Plr.Backpack:GetChildren()) do
                 if string.find(item.Name, "Fruit") then
@@ -341,19 +348,18 @@ local function RunLoop()
                 task.wait(1)
             end
 
-            -- Check for new fruits after raid
+            -- Check bagong fruits after raid
             local newFruits = GetDroppedFruits()
             if #newFruits >= 1 then
                 Notify("New fruit detected! Restarting loop...")
             else
-                -- No fruits found, hop immediately
                 Notify("No fruits remaining. Hopping in " .. Config.HopDelay .. "s...")
                 task.wait(Config.HopDelay)
                 Hop()
             end
 
         else
-            -- No fruit detected at all, hop immediately
+            -- Walang fruit, hop agad
             Notify("No fruits detected. Hopping in " .. Config.HopDelay .. "s...")
             task.wait(Config.HopDelay)
             Hop()
@@ -361,5 +367,10 @@ local function RunLoop()
     end
 end
 
--- Start
+-- ================================================
+-- EXECUTION ORDER:
+-- 1. JoinMarines()  ← blocking, tapos muna bago lahat
+-- 2. task.wait(1)   ← buffer
+-- 3. RunLoop()      ← loop starts
+-- ================================================
 task.spawn(RunLoop)
