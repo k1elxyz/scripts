@@ -3,15 +3,15 @@
 --   Functions lifted directly from REDZ_HUB source
 -- ================================================
 
-local Players     = game:GetService("Players")
-local RepStorage  = game:GetService("ReplicatedStorage")
-local TweenSvc    = game:GetService("TweenService")
-local TpSvc       = game:GetService("TeleportService")
-local Workspace   = game:GetService("Workspace")
+local Players    = game:GetService("Players")
+local RepStorage = game:GetService("ReplicatedStorage")
+local TweenSvc   = game:GetService("TweenService")
+local TpSvc      = game:GetService("TeleportService")
+local Workspace  = game:GetService("Workspace")
 
-local Plr  = Players.LocalPlayer
-local Char = Plr.Character or Plr.CharacterAdded:Wait()
-local Root = Char:WaitForChild("HumanoidRootPart")
+local Plr    = Players.LocalPlayer
+local Char   = Plr.Character or Plr.CharacterAdded:Wait()
+local Root   = Char:WaitForChild("HumanoidRootPart")
 local CommF_ = RepStorage.Remotes.CommF_
 
 local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
@@ -21,13 +21,12 @@ local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 -- CONFIG
 -- ================================================
 local Config = {
-    ChipType     = "Flame",
-    MinFruits    = 1,      -- kahit 1 fruit, aaksyon na
-    FruitRadius  = 2000,
-    TweenSpeed   = 0.3,
-    HopDelay     = 5,
-    RaidTimeout  = 300,    -- 5 min max bago mag-timeout
-    LoopEnabled  = true,
+    ChipType    = "Flame",
+    FruitRadius = 2000,
+    TweenSpeed  = 0.3,
+    HopDelay    = 5,
+    RaidTimeout = 300,
+    LoopEnabled = true,
 }
 
 -- ================================================
@@ -62,6 +61,22 @@ local function refreshChar()
 end
 
 -- ================================================
+-- AUTO JOIN MARINES (exact from source JoinTeam)
+-- ================================================
+
+local function JoinMarines()
+    if not Plr.Team
+    or (Plr.Team.Name ~= "Marines" and Plr.Team.Name ~= "Pirates") then
+        pcall(function()
+            CommF_:InvokeServer("SetTeam", "Marines")
+        end)
+        Notify("Joined Marines team.")
+    else
+        Notify("Already in a team: " .. Plr.Team.Name)
+    end
+end
+
+-- ================================================
 -- STEP 1: DETECT DROPPED FRUITS
 -- ================================================
 
@@ -84,7 +99,7 @@ end
 
 local function CollectFruit(fruit)
     if not fruit or not fruit:FindFirstChild("Handle") then return end
-    Notify("Kinukuha: " .. fruit.Name)
+    Notify("Collecting: " .. fruit.Name)
     TweenTo(fruit.Handle.CFrame)
     task.wait(0.3)
     pcall(function()
@@ -95,11 +110,10 @@ end
 
 -- ================================================
 -- STEP 3: BUY CHIP
--- CommF_:InvokeServer("RaidsNpc", "Select", chip)
 -- ================================================
 
 local function BuyChip()
-    Notify("Binibili ang " .. Config.ChipType .. " chip...")
+    Notify("Buying " .. Config.ChipType .. " chip...")
 
     if World2 then
         topos(CFrame.new(-6438.73, 250.64, -4501.5))
@@ -115,16 +129,14 @@ local function BuyChip()
         CommF_:InvokeServer("RaidsNpc", "Select", Config.ChipType)
     end)
     task.wait(1)
-    Notify("Chip bought!")
+    Notify("Chip purchased!")
 end
 
 -- ================================================
 -- STEP 4: START RAID
--- fireclickdetector(RaidSummon2)
 -- ================================================
 
 local function StartRaid()
-    -- Hintayin ang chip sa backpack/char
     local waited = 0
     repeat
         task.wait(1)
@@ -135,14 +147,13 @@ local function StartRaid()
 
     if not (Plr.Backpack:FindFirstChild("Special Microchip")
         or Char:FindFirstChild("Special Microchip")) then
-        Notify("Walang Special Microchip! Skip.")
+        Notify("No Special Microchip found! Skipping raid.")
         return false
     end
 
-    -- Hintayin na walang active raid (Timer not visible)
     local gui = Plr.PlayerGui:FindFirstChild("Main")
     if gui and gui:FindFirstChild("Timer") and gui.Timer.Visible then
-        Notify("May active raid pa, naghihintay...")
+        Notify("Active raid detected, waiting for it to finish...")
         repeat task.wait(1) until not gui.Timer.Visible
     end
 
@@ -170,8 +181,6 @@ end
 
 -- ================================================
 -- STEP 5: COMPLETE RAID (AUTO FARM MOBS PER ISLAND)
--- FarmRaidEnemies + GetNextIsland exact from source
--- Done = Island 1 wala na sa _WorldOrigin.Locations
 -- ================================================
 
 local function GetIsland(num)
@@ -225,24 +234,21 @@ end
 
 local function CompleteRaid()
     _G.RaidRunning = true
-    Notify("Tinatapusin ang raid...")
+    Notify("Completing raid...")
 
     local elapsed = 0
     while _G.RaidRunning and elapsed < Config.RaidTimeout do
         task.wait(0.1)
         elapsed = elapsed + 0.1
 
-        -- Tapos na ang raid
         if not IsRaidActive() then
             Notify("Raid completed!")
             _G.RaidRunning = false
             break
         end
 
-        -- Kill mobs sa current island
         FarmRaidEnemies()
 
-        -- Move to next island
         local isl = GetNextIsland()
         if isl then
             topos(isl.CFrame * CFrame.new(0, 60, 0))
@@ -250,7 +256,7 @@ local function CompleteRaid()
     end
 
     if elapsed >= Config.RaidTimeout then
-        Notify("Raid timeout! Proceeding...")
+        Notify("Raid timed out! Proceeding anyway.")
     end
 
     _G.RaidRunning = false
@@ -275,11 +281,13 @@ end
 
 -- ================================================
 -- MAIN LOOP
--- 1 fruit na lang → collect → chip → raid → farm mobs
--- → check ulit kung may fruit → pag wala → 5s → hop
 -- ================================================
 
 local function RunLoop()
+    -- Auto join Marines on start (exact from source JoinTeam)
+    JoinMarines()
+    task.wait(1)
+
     Notify("Auto Fruit Raid Loop started!")
 
     while Config.LoopEnabled do
@@ -290,8 +298,7 @@ local function RunLoop()
         Notify("Fruits detected: " .. #fruits)
 
         if #fruits >= 1 then
-
-            -- Tween at kolektahin lahat ng fruits
+            -- Tween + collect all fruits
             for _, fruit in ipairs(fruits) do
                 if Char.Humanoid.Health <= 0 then
                     refreshChar()
@@ -300,7 +307,7 @@ local function RunLoop()
                 CollectFruit(fruit)
             end
 
-            -- Kunin lahat ng fruits na nasa inventory
+            -- Get fruits from inventory
             local fruitItems = {}
             for _, item in ipairs(Plr.Backpack:GetChildren()) do
                 if string.find(item.Name, "Fruit") then
@@ -313,11 +320,11 @@ local function RunLoop()
                 end
             end
 
-            Notify("Fruits sa inventory: " .. #fruitItems)
+            Notify("Fruits in inventory: " .. #fruitItems)
 
-            -- Bawat fruit → chip → raid → complete
+            -- Per fruit: buy chip → start raid → complete
             for _, fruitItem in ipairs(fruitItems) do
-                Notify("Processing: " .. fruitItem.Name)
+                Notify("Processing fruit: " .. fruitItem.Name)
                 BuyChip()
                 local started = StartRaid()
                 if started then
@@ -326,20 +333,22 @@ local function RunLoop()
                 task.wait(1)
             end
 
-            -- Pagkatapos, check kung may bagong fruit pa
+            -- Check for new fruits after raid
             local newFruits = GetDroppedFruits()
             if #newFruits >= 1 then
-                Notify("May bagong fruit! Uulitin...")
-                -- Hindi mag-hop, mag-loop ulit
+                Notify("New fruit detected! Restarting loop...")
             else
-                -- Wala na → wait 5s → hop
-                Notify("Walang fruits na. Hopping in 5s...")
-                task.wait(5)
+                -- No fruits found, hop immediately
+                Notify("No fruits remaining. Hopping in " .. Config.HopDelay .. "s...")
+                task.wait(Config.HopDelay)
                 Hop()
             end
 
         else
-            Notify("Walang fruit na detected. Naghihintay...")
+            -- No fruit detected at all, hop immediately
+            Notify("No fruits detected. Hopping in " .. Config.HopDelay .. "s...")
+            task.wait(Config.HopDelay)
+            Hop()
         end
     end
 end
