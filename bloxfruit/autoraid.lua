@@ -26,21 +26,23 @@ local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 local Config = {
     ChipType = "Flame",
     FruitRadius = 6000,
-    TweenSpeed = 0.3,
+    TweenSpeed = 0.2,
     HopDelay = 10,
     RaidTimeout = 300,
     LoopEnabled = true,
-    SelectWeapon = "Melee", -- Melee/Sword/Gun/Fruit
-    FastAttackDelay = 0.1,
+    SelectWeapon = "Melee",
+    FastAttackDelay = 0.05,
+    MobDistance = 1000, -- Distance to detect raid mobs
 }
 
--- GLOBALS FOR RAID
+-- GLOBALS
 _G.RaidRunning = false
 _G.StartBring = false
 _G.BringPos = nil
 _G.MonFarm = nil
+_G.NeedAttacking = false
 
--- UTILITY FUNCTIONS
+-- UTILITY
 local function Notify(msg)
     print("[FruitRaid] " .. msg)
     pcall(function()
@@ -61,113 +63,83 @@ local function getCommF()
     return RepStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 end
 
--- TWEEN FUNCTIONS
-local function TweenTo(cf)
-    pcall(function()
-        local info = TweenInfo.new(Config.TweenSpeed, Enum.EasingStyle.Linear)
-        TweenSvc:Create(Root, info, {CFrame = cf}):Play()
-        task.wait(Config.TweenSpeed + 0.1)
-    end)
-end
-
-local function topos(cf)
-    pcall(function() Root.CFrame = cf end)
-    task.wait(0.6)
-end
-
-local function TP1(cf)
-    pcall(function()
-        local dist = (cf.Position - Root.Position).Magnitude
-        local speed = 300
-        local t = dist / speed
-        if t > 0 then
-            local tween = TweenSvc:Create(Root, TweenInfo.new(t, Enum.EasingStyle.Linear), {CFrame = cf})
-            tween:Play()
-            tween.Completed:Wait()
-        end
-    end)
-end
-
--- NOCLIP SYSTEM (CRITICAL FOR RAID)
-local NoClip = false
-local function enableNoclip()
-    if not Root:FindFirstChild("BodyClip") then
-        local bodyClip = Instance.new("BodyVelocity")
-        bodyClip.Name = "BodyClip"
-        bodyClip.Parent = Root
-        bodyClip.MaxForce = Vector3.new(100000, 100000, 100000)
-        bodyClip.Velocity = Vector3.new(0, 0, 0)
-    end
-end
-
-local function disableNoclip()
-    local bc = Root:FindFirstChild("BodyClip")
-    if bc then bc:Destroy() end
-end
-
+-- FAST ATTACK SYSTEM (CRITICAL - CONTINUOUS ATTACK)
 spawn(function()
-    while task.wait(0.2) do
+    while task.wait(Config.FastAttackDelay) do
         pcall(function()
-            if NoClip or _G.RaidRunning then
-                enableNoclip()
-                for _, v in pairs(Char:GetDescendants()) do
-                    if v:IsA("BasePart") then v.CanCollide = false end
-                end
-            else
-                disableNoclip()
+            if _G.NeedAttacking then
+                VirtualUser:CaptureController()
+                VirtualUser:Button1Down(Vector2.new(1280, 672))
             end
         end)
     end
 end)
 
--- COMBAT FUNCTIONS (CRITICAL - THESE WERE MISSING!)
-local function AutoHaki()
-    if not Char:FindFirstChild("HasBuso") then
+-- TWEEN FUNCTIONS
+local function topos(cf)
+    pcall(function()
+        local dist = (cf.Position - Root.Position).Magnitude
+        local speed = 300
+        local t = math.max(dist / speed, 0.01)
+        local tween = TweenSvc:Create(Root, TweenInfo.new(t, Enum.EasingStyle.Linear), {CFrame = cf})
+        tween:Play()
+        if t > 0.5 then
+            tween.Completed:Wait()
+        end
+    end)
+end
+
+local function TweenTo(cf)
+    topos(cf)
+end
+
+-- NOCLIP SYSTEM
+local NoClip = false
+spawn(function()
+    while task.wait(0.1) do
         pcall(function()
-            getCommF():InvokeServer("Buso")
+            if NoClip or _G.RaidRunning then
+                if not Root:FindFirstChild("BodyClip") then
+                    local bc = Instance.new("BodyVelocity")
+                    bc.Name = "BodyClip"
+                    bc.Parent = Root
+                    bc.MaxForce = Vector3.new(100000, 100000, 100000)
+                    bc.Velocity = Vector3.new(0, 0, 0)
+                end
+                for _, v in pairs(Char:GetDescendants()) do
+                    if v:IsA("BasePart") then v.CanCollide = false end
+                end
+            else
+                local bc = Root:FindFirstChild("BodyClip")
+                if bc then bc:Destroy() end
+            end
         end)
     end
+end)
+
+-- COMBAT FUNCTIONS
+local function AutoHaki()
+    pcall(function()
+        if not Char:FindFirstChild("HasBuso") then
+            getCommF():InvokeServer("Buso")
+        end
+    end)
 end
 
 local function EquipWeapon(weaponType)
     if not weaponType then weaponType = Config.SelectWeapon end
     pcall(function()
         local tool
-        if weaponType == "Melee" then
-            for _, v in pairs(Plr.Backpack:GetChildren()) do
-                if v:IsA("Tool") and v.ToolTip == "Melee" then
-                    tool = v; break
-                end
-            end
-        elseif weaponType == "Sword" then
-            for _, v in pairs(Plr.Backpack:GetChildren()) do
-                if v:IsA("Tool") and v.ToolTip == "Sword" then
-                    tool = v; break
-                end
-            end
-        elseif weaponType == "Gun" then
-            for _, v in pairs(Plr.Backpack:GetChildren()) do
-                if v:IsA("Tool") and v.ToolTip == "Gun" then
-                    tool = v; break
-                end
-            end
-        elseif weaponType == "Fruit" or weaponType == "Blox Fruit" then
-            for _, v in pairs(Plr.Backpack:GetChildren()) do
-                if v:IsA("Tool") and v.ToolTip == "Blox Fruit" then
-                    tool = v; break
+        for _, v in pairs(Plr.Backpack:GetChildren()) do
+            if v:IsA("Tool") then
+                if weaponType == "Melee" and v.ToolTip == "Melee" then tool = v; break
+                elseif weaponType == "Sword" and v.ToolTip == "Sword" then tool = v; break
+                elseif weaponType == "Gun" and v.ToolTip == "Gun" then tool = v; break
+                elseif (weaponType == "Fruit" or weaponType == "Blox Fruit") and v.ToolTip == "Blox Fruit" then tool = v; break
                 end
             end
         end
-        if tool then
-            Char.Humanoid:EquipTool(tool)
-        end
-    end)
-end
-
-local function AttackNoCD()
-    pcall(function()
-        VirtualUser:CaptureController()
-        VirtualUser:Button1Down(Vector2.new(1280, 672))
+        if tool then Char.Humanoid:EquipTool(tool) end
     end)
 end
 
@@ -181,12 +153,9 @@ local function Hop()
     local currentJobId = game.JobId
 
     local function TryHop()
-        local url
-        if cursor ~= "" then
-            url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&cursor=" .. cursor
-        else
-            url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
-        end
+        local url = cursor ~= "" 
+            and "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100&cursor=" .. cursor
+            or "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
 
         local success, data = pcall(function()
             return HttpSvc:JSONDecode(game:HttpGet(url))
@@ -201,15 +170,11 @@ local function Hop()
             local serverId = tostring(server.id)
             if serverId ~= currentJobId and tonumber(server.maxPlayers) > tonumber(server.playing) then
                 local alreadyTried = false
-                for _, t in pairs(tried) do
-                    if t == serverId then alreadyTried = true; break end
-                end
+                for _, t in pairs(tried) do if t == serverId then alreadyTried = true; break end end
                 if not alreadyTried then
                     table.insert(tried, serverId)
                     Notify("Hopping to server: " .. serverId)
-                    pcall(function()
-                        TpSvc:TeleportToPlaceInstance(placeId, serverId, Plr)
-                    end)
+                    pcall(function() TpSvc:TeleportToPlaceInstance(placeId, serverId, Plr) end)
                     task.wait(5)
                 end
             end
@@ -242,9 +207,7 @@ end
 local function CollectFruit(fruit)
     if not fruit or not fruit:FindFirstChild("Handle") then return end
     Notify("Collecting: " .. fruit.Name)
-    TweenTo(fruit.Handle.CFrame)
-    task.wait(0.3)
-    pcall(function() Root.CFrame = fruit.Handle.CFrame end)
+    topos(fruit.Handle.CFrame)
     task.wait(0.5)
 end
 
@@ -278,15 +241,19 @@ local function StartRaid()
 
     if not (Plr.Backpack:FindFirstChild("Special Microchip")
         or Char:FindFirstChild("Special Microchip")) then
-        Notify("No Special Microchip found! Skipping raid.")
+        Notify("No Special Microchip found!")
         return false
     end
 
     -- Check if already in raid
-    local gui = Plr.PlayerGui:FindFirstChild("Main")
-    if gui and gui:FindFirstChild("Timer") and gui.Timer.Visible then
-        Notify("Active raid detected, joining...")
-        return true
+    local locations = Workspace:FindFirstChild("_WorldOrigin") and Workspace._WorldOrigin:FindFirstChild("Locations")
+    if locations then
+        for i = 1, 5 do
+            if locations:FindFirstChild("Island " .. i) then
+                Notify("Already in raid! Joining...")
+                return true
+            end
+        end
     end
 
     if World2 then
@@ -308,114 +275,137 @@ local function StartRaid()
         end)
     end
 
-    task.wait(2)
-    Notify("Raid started!")
-    return true
-end
-
--- FIXED RAID ISLAND DETECTION
-local function GetRaidIsland()
-    local locations = Workspace:FindFirstChild("_WorldOrigin") 
-        and Workspace._WorldOrigin:FindFirstChild("Locations")
-    if not locations then return nil end
+    task.wait(3)
     
-    -- Raid islands are numbered 1-5
-    for i = 1, 5 do
-        local island = locations:FindFirstChild("Island " .. i)
-        if island then
-            local dist = (island.Position - Root.Position).Magnitude
-            if dist <= 5000 then
-                return island
-            end
+    -- Wait for raid to actually start (islands appear)
+    local raidStarted = false
+    for i = 1, 30 do
+        task.wait(0.5)
+        local loc = Workspace:FindFirstChild("_WorldOrigin") and Workspace._WorldOrigin:FindFirstChild("Locations")
+        if loc and loc:FindFirstChild("Island 1") then
+            raidStarted = true
+            break
         end
     end
-    return nil
+    
+    if raidStarted then
+        Notify("Raid started successfully!")
+        return true
+    else
+        Notify("Raid failed to start!")
+        return false
+    end
 end
 
-local function GetNextRaidIsland()
-    local locations = Workspace:FindFirstChild("_WorldOrigin") 
-        and Workspace._WorldOrigin:FindFirstChild("Locations")
-    if not locations then return nil end
+-- FIXED RAID ISLAND SYSTEM
+local function GetCurrentIslandNumber()
+    local locations = Workspace:FindFirstChild("_WorldOrigin") and Workspace._WorldOrigin:FindFirstChild("Locations")
+    if not locations then return 0 end
     
-    -- Find highest available island
+    -- Check from highest to lowest (5 to 1)
     for i = 5, 1, -1 do
         local island = locations:FindFirstChild("Island " .. i)
         if island then
+            -- Check if we're close to this island
             local dist = (island.Position - Root.Position).Magnitude
-            if dist <= 4500 then
-                return island
+            if dist <= 4000 then
+                return i
             end
         end
     end
-    return nil
+    return 0
+end
+
+local function GetIslandPosition(num)
+    local locations = Workspace:FindFirstChild("_WorldOrigin") and Workspace._WorldOrigin:FindFirstChild("Locations")
+    if not locations then return nil end
+    
+    local island = locations:FindFirstChild("Island " .. num)
+    return island and island.CFrame
 end
 
 local function IsRaidActive()
-    local locations = Workspace:FindFirstChild("_WorldOrigin") 
-        and Workspace._WorldOrigin:FindFirstChild("Locations")
+    local locations = Workspace:FindFirstChild("_WorldOrigin") and Workspace._WorldOrigin:FindFirstChild("Locations")
     if not locations then return false end
-    return locations:FindFirstChild("Island 1") ~= nil
-        or locations:FindFirstChild("Island 2") ~= nil
-        or locations:FindFirstChild("Island 3") ~= nil
-        or locations:FindFirstChild("Island 4") ~= nil
-        or locations:FindFirstChild("Island 5") ~= nil
+    
+    for i = 1, 5 do
+        if locations:FindFirstChild("Island " .. i) then
+            return true
+        end
+    end
+    return false
 end
 
--- FIXED RAID ENEMY FARMING - THIS WAS THE MAIN PROBLEM!
+-- FIXED RAID ENEMY FARMING WITH PROPER ATTACK
 local function FarmRaidEnemies()
+    local enemiesFound = false
+    
     for _, mob in pairs(Workspace.Enemies:GetChildren()) do
         if mob:FindFirstChild("HumanoidRootPart")
         and mob:FindFirstChild("Humanoid")
         and mob.Humanoid.Health > 0
-        and (mob.HumanoidRootPart.Position - Root.Position).Magnitude <= 1500 then
+        and (mob.HumanoidRootPart.Position - Root.Position).Magnitude <= Config.MobDistance then
+            
+            enemiesFound = true
             
             -- SETUP BRING SYSTEM
             _G.BringPos = mob.HumanoidRootPart.CFrame
             _G.MonFarm = mob.Name
             _G.StartBring = true
             
-            repeat
-                task.wait(Config.FastAttackDelay)
+            -- COMBAT SETUP
+            AutoHaki()
+            EquipWeapon(Config.SelectWeapon)
+            NoClip = true
+            _G.NeedAttacking = true
+            
+            -- ENEMY SETUP - BIG HITBOX
+            mob.HumanoidRootPart.CanCollide = false
+            mob.Humanoid.WalkSpeed = 0
+            mob.HumanoidRootPart.Size = Vector3.new(80, 80, 80) -- BIGGER HITBOX
+            mob.Head.CanCollide = false
+            
+            -- FIGHT LOOP
+            local fightStart = tick()
+            while mob.Parent 
+                and mob.Humanoid.Health > 0 
+                and _G.RaidRunning
+                and (tick() - fightStart) < 30 do -- Max 30 sec per enemy
+                
+                task.wait(0.05)
                 refreshChar()
                 
-                if mob.Humanoid.Health > 0 then
-                    -- ENABLE COMBAT
-                    AutoHaki()
-                    EquipWeapon(Config.SelectWeapon)
-                    NoClip = true
-                    
-                    -- ATTACK POSITION (above enemy)
-                    local targetPos = mob.HumanoidRootPart.CFrame * CFrame.new(0, 35, 0)
-                    TP1(targetPos)
-                    
-                    -- LOCK ENEMY
-                    mob.HumanoidRootPart.CanCollide = false
-                    mob.Humanoid.WalkSpeed = 0
-                    mob.HumanoidRootPart.Size = Vector3.new(60, 60, 60)
-                    mob.HumanoidRootPart.CFrame = _G.BringPos
-                    
-                    -- ATTACK!
-                    AttackNoCD()
-                    
-                    -- EXTEND SIMULATION RADIUS
-                    pcall(function()
-                        sethiddenproperty(Plr, "SimulationRadius", math.huge)
-                    end)
+                if Char.Humanoid.Health <= 0 then
+                    _G.NeedAttacking = false
+                    _G.StartBring = false
+                    return "died"
                 end
                 
-            until mob.Humanoid.Health <= 0 
-                or not mob.Parent 
-                or not _G.RaidRunning
-                or not IsRaidActive()
+                -- KEEP ENEMY LOCKED
+                mob.HumanoidRootPart.CFrame = _G.BringPos
+                mob.Humanoid.WalkSpeed = 0
+                
+                -- ATTACK POSITION
+                local attackPos = _G.BringPos * CFrame.new(0, 35, 0)
+                topos(attackPos)
+                
+                -- SIMULATION RADIUS
+                pcall(function()
+                    sethiddenproperty(Plr, "SimulationRadius", math.huge)
+                end)
+            end
             
+            _G.NeedAttacking = false
             _G.StartBring = false
         end
     end
+    
+    return enemiesFound
 end
 
--- BRING SYSTEM FOR RAID
+-- BRING SYSTEM
 spawn(function()
-    while task.wait(0.1) do
+    while task.wait(0.05) do
         pcall(function()
             if _G.StartBring and _G.BringPos and _G.MonFarm then
                 for _, v in pairs(Workspace.Enemies:GetChildren()) do
@@ -426,6 +416,7 @@ spawn(function()
                         v.HumanoidRootPart.CFrame = _G.BringPos
                         v.Humanoid.WalkSpeed = 0
                         v.HumanoidRootPart.CanCollide = false
+                        v.HumanoidRootPart.Size = Vector3.new(80, 80, 80)
                     end
                 end
             end
@@ -433,70 +424,90 @@ spawn(function()
     end
 end)
 
--- COMPLETE RAID WITH PROPER LOGIC
+-- COMPLETE RAID WITH ISLAND PROGRESSION
 local function CompleteRaid()
     _G.RaidRunning = true
     NoClip = true
-    Notify("Completing raid...")
     
-    local elapsed = 0
-    local lastEnemyTime = tick()
+    local currentIsland = 1
+    local lastProgressTime = tick()
     
-    while _G.RaidRunning and elapsed < Config.RaidTimeout do
+    Notify("Raid started! Looking for Island " .. currentIsland)
+    
+    while _G.RaidRunning do
         task.wait(0.1)
-        elapsed = elapsed + 0.1
-        
-        -- Check if raid ended
-        if not IsRaidActive() then
-            Notify("Raid completed!")
-            break
-        end
-        
         refreshChar()
         
         -- Check death
         if Char.Humanoid.Health <= 0 then
-            Notify("Died, waiting for respawn...")
-            _G.RaidRunning = false
+            _G.NeedAttacking = false
+            _G.StartBring = false
+            Notify("Died! Waiting for respawn...")
             NoClip = false
             task.wait(5)
             refreshChar()
-            _G.RaidRunning = true
             NoClip = true
+            lastProgressTime = tick()
         end
         
-        -- Farm enemies
-        local enemyCount = 0
-        for _, mob in pairs(Workspace.Enemies:GetChildren()) do
-            if mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
-                enemyCount = enemyCount + 1
-            end
+        -- Check if raid ended
+        if not IsRaidActive() then
+            Notify("Raid completed! All islands cleared.")
+            break
         end
         
-        if enemyCount > 0 then
-            lastEnemyTime = tick()
-            FarmRaidEnemies()
+        -- Get current island
+        local islandNum = GetCurrentIslandNumber()
+        if islandNum > 0 then
+            currentIsland = islandNum
+        end
+        
+        -- Try to farm enemies
+        local result = FarmRaidEnemies()
+        
+        if result == "died" then
+            -- Handled above
+        elseif result == true then
+            -- Enemies found and fought
+            lastProgressTime = tick()
         else
-            -- No enemies, check for next island
-            if tick() - lastEnemyTime > 3 then
-                local nextIsland = GetNextRaidIsland()
+            -- No enemies found - check for next island or wait
+            if tick() - lastProgressTime > 5 then
+                -- Try to move to next island
+                local nextIsland = GetIslandPosition(currentIsland + 1)
                 if nextIsland then
-                    Notify("Moving to next island...")
-                    topos(nextIsland.CFrame * CFrame.new(0, 60, 0))
-                    task.wait(1)
+                    local dist = (nextIsland.Position - Root.Position).Magnitude
+                    if dist > 100 and dist < 5000 then
+                        Notify("Moving to Island " .. (currentIsland + 1))
+                        topos(nextIsland * CFrame.new(0, 60, 0))
+                        lastProgressTime = tick()
+                    end
+                else
+                    -- Stay on current island
+                    local currentPos = GetIslandPosition(currentIsland)
+                    if currentPos then
+                        local dist = (currentPos.Position - Root.Position).Magnitude
+                        if dist > 200 then
+                            topos(currentPos * CFrame.new(0, 60, 0))
+                        end
+                    end
                 end
             end
         end
-    end
-    
-    if elapsed >= Config.RaidTimeout then
-        Notify("Raid timed out!")
+        
+        -- Timeout check
+        if tick() - lastProgressTime > Config.RaidTimeout then
+            Notify("Raid timeout! No progress for too long.")
+            break
+        end
     end
     
     _G.RaidRunning = false
-    NoClip = false
+    _G.NeedAttacking = false
     _G.StartBring = false
-    task.wait(1)
+    NoClip = false
+    Notify("Raid ended!")
+    task.wait(2)
 end
 
 -- MAIN LOOP
@@ -506,7 +517,6 @@ local function RunLoop()
         task.wait(2)
         refreshChar()
         
-        -- Check death first
         if Char.Humanoid.Health <= 0 then
             task.wait(5)
             refreshChar()
@@ -527,12 +537,9 @@ local function RunLoop()
                     task.wait(3)
                 end
                 
-                -- Collect fruit
-                Notify("Picking up: " .. fruit.Name)
                 CollectFruit(fruit)
                 task.wait(1)
                 
-                -- Buy chip and start raid
                 BuyChip()
                 local started = StartRaid()
                 
@@ -540,7 +547,7 @@ local function RunLoop()
                     CompleteRaid()
                     task.wait(2)
                 else
-                    Notify("Failed to start raid, continuing...")
+                    Notify("Failed to start raid, trying next fruit...")
                 end
             end
         end
